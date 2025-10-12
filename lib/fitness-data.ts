@@ -1,7 +1,11 @@
+import { getDB } from './mongodb';
+import { ObjectId } from 'mongodb';
+
 export interface FitnessMetrics {
+  _id?: ObjectId;
   id: string;
   userId: string;
-  date: string; // YYYY-MM-DD format
+  date: string;
   steps: number;
   caloriesBurned: number;
   heartRate: {
@@ -10,13 +14,14 @@ export interface FitnessMetrics {
     max: number;
     readings: { time: string; value: number }[];
   };
-  distance: number; // in meters
+  distance: number;
   activeMinutes: number;
   syncedAt: Date;
   source: 'manual' | 'google_fit' | 'device';
 }
 
 export interface FitnessGoals {
+  _id?: ObjectId;
   userId: string;
   dailySteps: number;
   dailyCalories: number;
@@ -25,6 +30,7 @@ export interface FitnessGoals {
 }
 
 export interface Achievement {
+  _id?: ObjectId;
   id: string;
   userId: string;
   type: 'steps' | 'calories' | 'workouts' | 'streak';
@@ -44,12 +50,6 @@ export interface ProgressTrend {
   heartRateAvg: number;
 }
 
-// Mock database
-const fitnessMetrics: FitnessMetrics[] = [];
-const fitnessGoals: FitnessGoals[] = [];
-const achievements: Achievement[] = [];
-
-// Default fitness goals
 const DEFAULT_GOALS = {
   dailySteps: 10000,
   dailyCalories: 2000,
@@ -57,7 +57,6 @@ const DEFAULT_GOALS = {
   weeklyWorkouts: 4
 };
 
-// Achievement templates
 const ACHIEVEMENT_TEMPLATES = [
   { type: 'steps', title: 'First Steps', description: 'Walk 1,000 steps in a day', threshold: 1000, icon: '👣' },
   { type: 'steps', title: 'Step Master', description: 'Walk 10,000 steps in a day', threshold: 10000, icon: '🚶' },
@@ -68,12 +67,9 @@ const ACHIEVEMENT_TEMPLATES = [
   { type: 'streak', title: 'Consistency King', description: 'Maintain a 7-day workout streak', threshold: 7, icon: '⚡' },
 ];
 
-// Simulate Google Fit API authentication
 export const authenticateGoogleFit = async (): Promise<{ success: boolean; token?: string; error?: string }> => {
-  // Simulate API call delay
   await new Promise(resolve => setTimeout(resolve, 1000));
   
-  // Simulate successful authentication (90% success rate)
   if (Math.random() > 0.1) {
     return {
       success: true,
@@ -87,20 +83,16 @@ export const authenticateGoogleFit = async (): Promise<{ success: boolean; token
   }
 };
 
-// Simulate fetching data from Google Fit
 export const fetchGoogleFitData = async (userId: string, date: string): Promise<FitnessMetrics | null> => {
-  // Simulate API call delay
   await new Promise(resolve => setTimeout(resolve, 500));
   
-  // Simulate API rate limiting (5% chance)
   if (Math.random() < 0.05) {
     throw new Error('Rate limit exceeded. Please try again later.');
   }
   
-  // Generate realistic fitness data
-  const baseSteps = 8000 + Math.floor(Math.random() * 6000); // 8000-14000 steps
-  const baseCalories = 1800 + Math.floor(Math.random() * 800); // 1800-2600 calories
-  const baseHeartRate = 70 + Math.floor(Math.random() * 30); // 70-100 bpm average
+  const baseSteps = 8000 + Math.floor(Math.random() * 6000);
+  const baseCalories = 1800 + Math.floor(Math.random() * 800);
+  const baseHeartRate = 70 + Math.floor(Math.random() * 30);
   
   const fitnessData: FitnessMetrics = {
     id: `${userId}-${date}-${Date.now()}`,
@@ -114,8 +106,8 @@ export const fetchGoogleFitData = async (userId: string, date: string): Promise<
       max: baseHeartRate + 20 + Math.floor(Math.random() * 20),
       readings: generateHeartRateReadings(baseHeartRate)
     },
-    distance: Math.floor(baseSteps * 0.762), // Approximate meters per step
-    activeMinutes: 20 + Math.floor(Math.random() * 40), // 20-60 minutes
+    distance: Math.floor(baseSteps * 0.762),
+    activeMinutes: 20 + Math.floor(Math.random() * 40),
     syncedAt: new Date(),
     source: 'google_fit'
   };
@@ -129,7 +121,7 @@ const generateHeartRateReadings = (avgHeartRate: number) => {
   
   for (let i = 0; i < 24; i++) {
     const time = new Date(now.getTime() - (23 - i) * 60 * 60 * 1000);
-    const variation = Math.floor(Math.random() * 20) - 10; // ±10 bpm variation
+    const variation = Math.floor(Math.random() * 20) - 10;
     readings.push({
       time: time.toISOString(),
       value: Math.max(50, Math.min(180, avgHeartRate + variation))
@@ -139,80 +131,102 @@ const generateHeartRateReadings = (avgHeartRate: number) => {
   return readings;
 };
 
-// Store fitness metrics
 export const storeFitnessMetrics = async (metrics: FitnessMetrics): Promise<void> => {
-  const existingIndex = fitnessMetrics.findIndex(
-    m => m.userId === metrics.userId && m.date === metrics.date
-  );
+  const db = await getDB();
+  const metricsCollection = db.collection<FitnessMetrics>('fitnessMetrics');
   
-  if (existingIndex !== -1) {
-    // Update existing metrics (handle conflicts by taking the latest data)
-    fitnessMetrics[existingIndex] = {
-      ...fitnessMetrics[existingIndex],
-      ...metrics,
-      syncedAt: new Date()
-    };
+  const existing = await metricsCollection.findOne({ userId: metrics.userId, date: metrics.date });
+  
+  if (existing) {
+    await metricsCollection.updateOne(
+      { userId: metrics.userId, date: metrics.date },
+      { 
+        $set: {
+          ...metrics,
+          syncedAt: new Date()
+        }
+      }
+    );
   } else {
-    fitnessMetrics.push(metrics);
+    await metricsCollection.insertOne(metrics);
   }
   
-  // Check for new achievements
   await checkAchievements(metrics.userId, metrics);
 };
 
-// Get fitness metrics for a specific date
 export const getFitnessMetrics = async (userId: string, date: string): Promise<FitnessMetrics | null> => {
-  return fitnessMetrics.find(m => m.userId === userId && m.date === date) || null;
+  const db = await getDB();
+  const metricsCollection = db.collection<FitnessMetrics>('fitnessMetrics');
+  
+  const metrics = await metricsCollection.findOne({ userId, date });
+  return metrics;
 };
 
-// Get fitness metrics for a date range
 export const getFitnessMetricsRange = async (
   userId: string, 
   startDate: string, 
   endDate: string
 ): Promise<FitnessMetrics[]> => {
-  return fitnessMetrics.filter(m => 
-    m.userId === userId && 
-    m.date >= startDate && 
-    m.date <= endDate
-  ).sort((a, b) => a.date.localeCompare(b.date));
+  const db = await getDB();
+  const metricsCollection = db.collection<FitnessMetrics>('fitnessMetrics');
+  
+  const metrics = await metricsCollection
+    .find({
+      userId,
+      date: { $gte: startDate, $lte: endDate }
+    })
+    .sort({ date: 1 })
+    .toArray();
+  
+  return metrics;
 };
 
-// Get or create fitness goals
 export const getFitnessGoals = async (userId: string): Promise<FitnessGoals> => {
-  let goals = fitnessGoals.find(g => g.userId === userId);
+  const db = await getDB();
+  const goalsCollection = db.collection<FitnessGoals>('fitnessGoals');
+  
+  let goals = await goalsCollection.findOne({ userId });
   
   if (!goals) {
     goals = {
       userId,
       ...DEFAULT_GOALS
     };
-    fitnessGoals.push(goals);
+    await goalsCollection.insertOne(goals);
   }
   
   return goals;
 };
 
-// Update fitness goals
 export const updateFitnessGoals = async (userId: string, newGoals: Partial<FitnessGoals>): Promise<FitnessGoals> => {
-  const existingIndex = fitnessGoals.findIndex(g => g.userId === userId);
+  const db = await getDB();
+  const goalsCollection = db.collection<FitnessGoals>('fitnessGoals');
   
-  if (existingIndex !== -1) {
-    fitnessGoals[existingIndex] = { ...fitnessGoals[existingIndex], ...newGoals };
-    return fitnessGoals[existingIndex];
+  const existing = await goalsCollection.findOne({ userId });
+  
+  if (existing) {
+    await goalsCollection.updateOne(
+      { userId },
+      { $set: newGoals }
+    );
+    return { ...existing, ...newGoals };
   } else {
     const goals = { userId, ...DEFAULT_GOALS, ...newGoals };
-    fitnessGoals.push(goals);
+    await goalsCollection.insertOne(goals);
     return goals;
   }
 };
 
-// Check and award achievements
 const checkAchievements = async (userId: string, metrics: FitnessMetrics): Promise<void> => {
-  const userAchievements = achievements.filter(a => a.userId === userId);
+  const db = await getDB();
+  const achievementsCollection = db.collection<Achievement>('achievements');
+  
+  const userAchievements = await achievementsCollection.find({ userId }).toArray();
   
   for (const template of ACHIEVEMENT_TEMPLATES) {
-    const existingAchievement = userAchievements.find(a => a.type === template.type && a.threshold === template.threshold);
+    const existingAchievement = userAchievements.find(
+      a => a.type === template.type && a.threshold === template.threshold
+    );
     
     if (!existingAchievement) {
       let shouldAward = false;
@@ -225,7 +239,6 @@ const checkAchievements = async (userId: string, metrics: FitnessMetrics): Promi
           shouldAward = metrics.caloriesBurned >= template.threshold;
           break;
         case 'workouts':
-          // Check weekly workouts (simplified)
           shouldAward = await checkWeeklyWorkouts(userId) >= template.threshold;
           break;
         case 'streak':
@@ -235,7 +248,7 @@ const checkAchievements = async (userId: string, metrics: FitnessMetrics): Promi
       
       if (shouldAward) {
         const achievement: Achievement = {
-          id: `${userId}-${template.type}-${template.threshold}-${Date.now()}`,
+          id: new ObjectId().toString(),
           userId,
           type: template.type as any,
           title: template.title,
@@ -246,18 +259,24 @@ const checkAchievements = async (userId: string, metrics: FitnessMetrics): Promi
           icon: template.icon
         };
         
-        achievements.push(achievement);
+        await achievementsCollection.insertOne(achievement);
       }
     }
   }
 };
 
-// Get user achievements
 export const getUserAchievements = async (userId: string): Promise<Achievement[]> => {
-  return achievements.filter(a => a.userId === userId && a.achieved);
+  const db = await getDB();
+  const achievementsCollection = db.collection<Achievement>('achievements');
+  
+  const achievements = await achievementsCollection
+    .find({ userId, achieved: true })
+    .sort({ achievedAt: -1 })
+    .toArray();
+  
+  return achievements;
 };
 
-// Calculate weekly progress
 export const getWeeklyProgress = async (userId: string): Promise<{
   steps: number;
   calories: number;
@@ -290,12 +309,11 @@ export const getWeeklyProgress = async (userId: string): Promise<{
     steps: totals.steps,
     calories: totals.calories,
     activeMinutes: totals.activeMinutes,
-    workouts: totals.count, // Simplified: each day with data = workout
+    workouts: totals.count,
     avgHeartRate: totals.count > 0 ? Math.round(totals.heartRateSum / totals.count) : 0
   };
 };
 
-// Get progress trends (last 30 days)
 export const getProgressTrends = async (userId: string): Promise<ProgressTrend[]> => {
   const today = new Date();
   const thirtyDaysAgo = new Date(today);
@@ -316,14 +334,12 @@ export const getProgressTrends = async (userId: string): Promise<ProgressTrend[]
   }));
 };
 
-// Helper functions for achievements
 const checkWeeklyWorkouts = async (userId: string): Promise<number> => {
   const weeklyProgress = await getWeeklyProgress(userId);
   return weeklyProgress.workouts;
 };
 
 const checkWorkoutStreak = async (userId: string): Promise<number> => {
-  // Simplified streak calculation
   const today = new Date();
   let streak = 0;
   
@@ -333,7 +349,7 @@ const checkWorkoutStreak = async (userId: string): Promise<number> => {
     const dateStr = checkDate.toISOString().split('T')[0];
     
     const metrics = await getFitnessMetrics(userId, dateStr);
-    if (metrics && metrics.steps > 5000) { // Simplified: 5000+ steps = active day
+    if (metrics && metrics.steps > 5000) {
       streak++;
     } else {
       break;
@@ -343,7 +359,6 @@ const checkWorkoutStreak = async (userId: string): Promise<number> => {
   return streak;
 };
 
-// Sync data with retry mechanism
 export const syncFitnessData = async (
   userId: string, 
   date: string, 
@@ -358,7 +373,6 @@ export const syncFitnessData = async (
     return { success: false, error: 'No data available' };
   } catch (error) {
     if (retryCount < 3) {
-      // Exponential backoff
       await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
       return syncFitnessData(userId, date, retryCount + 1);
     }

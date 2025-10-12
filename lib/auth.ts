@@ -1,10 +1,13 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { getDB } from './mongodb';
+import { ObjectId } from 'mongodb';
 import { initializeUserGamification } from './gamification';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || '5kFyxgdUg42TG/K6AVdHZer55xUtb+GwJhbBRbR77K0=';
 
 export interface User {
+  _id?: ObjectId;
   id: string;
   email: string;
   name: string;
@@ -18,9 +21,6 @@ export interface User {
 export interface UserWithPassword extends User {
   password: string;
 }
-
-// Mock database - in production, this would be MongoDB
-const users: UserWithPassword[] = [];
 
 export const hashPassword = async (password: string): Promise<string> => {
   return bcrypt.hash(password, 12);
@@ -43,34 +43,46 @@ export const verifyToken = (token: string): { userId: string } | null => {
 };
 
 export const createUser = async (email: string, password: string, name: string): Promise<User> => {
+  const db = await getDB();
+  const usersCollection = db.collection<UserWithPassword>('users');
+  
   const hashedPassword = await hashPassword(password);
+  const userId = new ObjectId().toString();
+  
   const user: UserWithPassword = {
-    id: Date.now().toString(),
+    id: userId,
     email: email.toLowerCase(),
     password: hashedPassword,
     name,
     createdAt: new Date(),
   };
   
-  users.push(user);
+  await usersCollection.insertOne(user);
   
   // Initialize gamification profile for new user
-  await initializeUserGamification(user.id);
+  await initializeUserGamification(userId);
   
   // Return user without password
-  const { password: _, ...userWithoutPassword } = user;
+  const { password: _, _id, ...userWithoutPassword } = user;
   return userWithoutPassword;
 };
 
 export const findUserByEmail = async (email: string): Promise<UserWithPassword | null> => {
-  return users.find(user => user.email === email.toLowerCase()) || null;
+  const db = await getDB();
+  const usersCollection = db.collection<UserWithPassword>('users');
+  
+  const user = await usersCollection.findOne({ email: email.toLowerCase() });
+  return user;
 };
 
 export const findUserById = async (id: string): Promise<User | null> => {
-  const user = users.find(user => user.id === id);
+  const db = await getDB();
+  const usersCollection = db.collection<UserWithPassword>('users');
+  
+  const user = await usersCollection.findOne({ id });
   if (!user) return null;
   
-  const { password: _, ...userWithoutPassword } = user;
+  const { password: _, _id, ...userWithoutPassword } = user;
   return userWithoutPassword;
 };
 
@@ -78,11 +90,17 @@ export const updateUserProfile = async (
   id: string, 
   updates: Partial<Pick<User, 'name' | 'age' | 'weight' | 'height' | 'fitnessGoal'>>
 ): Promise<User | null> => {
-  const userIndex = users.findIndex(user => user.id === id);
-  if (userIndex === -1) return null;
+  const db = await getDB();
+  const usersCollection = db.collection<UserWithPassword>('users');
   
-  users[userIndex] = { ...users[userIndex], ...updates };
+  const result = await usersCollection.findOneAndUpdate(
+    { id },
+    { $set: updates },
+    { returnDocument: 'after' }
+  );
   
-  const { password: _, ...userWithoutPassword } = users[userIndex];
+  if (!result) return null;
+  
+  const { password: _, _id, ...userWithoutPassword } = result;
   return userWithoutPassword;
 };

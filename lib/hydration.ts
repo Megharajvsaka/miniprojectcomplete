@@ -1,18 +1,23 @@
-export interface HydrationEntry {
-  id: string;
-  userId: string;
-  date: string; // YYYY-MM-DD format
-  amount: number; // in ml
-  goal: number; // daily goal in ml
-  entries: { time: string; amount: number }[];
-}
+import { getDB } from './mongodb';
+import { ObjectId } from 'mongodb';
 import { awardPoints, updateStreak, POINT_STRUCTURE } from './gamification';
 
-// Mock hydration database
-const hydrationData: HydrationEntry[] = [];
+export interface HydrationEntry {
+  _id?: ObjectId;
+  id: string;
+  userId: string;
+  date: string;
+  amount: number;
+  goal: number;
+  entries: { time: string; amount: number }[];
+}
 
 export const getHydrationForDate = async (userId: string, date: string): Promise<HydrationEntry | null> => {
-  return hydrationData.find(entry => entry.userId === userId && entry.date === date) || null;
+  const db = await getDB();
+  const hydrationCollection = db.collection<HydrationEntry>('hydration');
+  
+  const entry = await hydrationCollection.findOne({ userId, date });
+  return entry;
 };
 
 export const updateHydration = async (
@@ -21,7 +26,10 @@ export const updateHydration = async (
   amount: number, 
   goal: number = 2500
 ): Promise<HydrationEntry> => {
-  const existingEntry = hydrationData.find(entry => entry.userId === userId && entry.date === date);
+  const db = await getDB();
+  const hydrationCollection = db.collection<HydrationEntry>('hydration');
+  
+  const existingEntry = await hydrationCollection.findOne({ userId, date });
   
   if (existingEntry) {
     existingEntry.amount += amount;
@@ -30,21 +38,30 @@ export const updateHydration = async (
       amount
     });
     
-    // Check if hydration goal is met and award points
+    // Check if hydration goal is met
     if (existingEntry.amount >= existingEntry.goal) {
       await awardPoints(userId, 'hydration_goal_met', POINT_STRUCTURE.hydration_goal_met);
       await updateStreak(userId, 'hydration', date, true);
       
-      // Bonus points for exceeding goal by 50%
       if (existingEntry.amount >= existingEntry.goal * 1.5) {
         await awardPoints(userId, 'hydration_bonus', POINT_STRUCTURE.hydration_bonus);
       }
     }
     
+    await hydrationCollection.updateOne(
+      { userId, date },
+      { 
+        $set: { 
+          amount: existingEntry.amount,
+          entries: existingEntry.entries
+        }
+      }
+    );
+    
     return existingEntry;
   } else {
     const newEntry: HydrationEntry = {
-      id: Date.now().toString(),
+      id: new ObjectId().toString(),
       userId,
       date,
       amount,
@@ -54,27 +71,30 @@ export const updateHydration = async (
         amount
       }]
     };
-    hydrationData.push(newEntry);
     
-    // Check if hydration goal is met and award points
+    // Check if hydration goal is met
     if (newEntry.amount >= newEntry.goal) {
       await awardPoints(userId, 'hydration_goal_met', POINT_STRUCTURE.hydration_goal_met);
       await updateStreak(userId, 'hydration', date, true);
       
-      // Bonus points for exceeding goal by 50%
       if (newEntry.amount >= newEntry.goal * 1.5) {
         await awardPoints(userId, 'hydration_bonus', POINT_STRUCTURE.hydration_bonus);
       }
     }
     
+    await hydrationCollection.insertOne(newEntry);
     return newEntry;
   }
 };
 
 export const getHydrationStreak = async (userId: string): Promise<number> => {
-  const userEntries = hydrationData
-    .filter(entry => entry.userId === userId)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const db = await getDB();
+  const hydrationCollection = db.collection<HydrationEntry>('hydration');
+  
+  const userEntries = await hydrationCollection
+    .find({ userId })
+    .sort({ date: -1 })
+    .toArray();
   
   let streak = 0;
   const today = new Date();

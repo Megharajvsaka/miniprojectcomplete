@@ -1,214 +1,201 @@
+import { getDB } from './mongodb';
+import { ObjectId } from 'mongodb';
+
 export interface Message {
+  _id?: ObjectId;
   id: string;
-  sender: 'user' | 'assistant';
-  text: string;
+  userId?: string;
+  role: 'user' | 'assistant';
+  content: string;
   timestamp: Date;
-  type: 'chat' | 'hydration' | 'motivation' | 'suggestion';
-  quickActions?: QuickAction[];
 }
 
-export interface QuickAction {
-  id: string;
-  label: string;
-  action: string;
-  data?: any;
+export interface ConversationHistory {
+  _id?: ObjectId;
+  userId: string;
+  messages: Message[];
+  lastUpdated: Date;
 }
 
-// Mock conversation history
-const conversationHistory: Message[] = [];
-
-// Mock AI responses for different scenarios
-const chatResponses = [
-  "I'm here to help you stay on track with your fitness goals! How can I assist you today?",
-  "Great question! Let me help you with that. What specific area would you like to focus on?",
-  "I'm always here to support your fitness journey. What's on your mind?",
-  "That's a fantastic goal! I can help you create a plan to achieve it.",
-  "I understand your concern. Let's work together to find a solution that works for you.",
-  "Your dedication to fitness is inspiring! How can I help you today?",
-  "I'm here to provide guidance and motivation. What would you like to discuss?",
-  "Every step counts towards your fitness goals! What can I help you with?",
-];
-
-const hydrationReminders = [
-  "💧 Time for a hydration break! You haven't logged water in a while. How about drinking a glass now?",
-  "🚰 Your body needs water to perform at its best! Let's log some hydration.",
-  "💦 Staying hydrated is key to your fitness success. Time for a water break!",
-  "🥤 Don't forget to drink water! Your muscles need hydration to recover properly.",
-  "💧 Hydration check! Let's make sure you're getting enough water today.",
-];
-
-const motivationalMessages = {
-  missed: [
-    "💪 Don't worry about missing today's workout! Tomorrow is a fresh start. What matters is getting back on track.",
-    "🌟 Everyone has off days! The important thing is not giving up. You've got this!",
-    "🔥 Missing one workout doesn't define your journey. Let's plan something achievable for tomorrow!",
-    "⚡ Life happens, and that's okay! Your consistency over time is what counts. Ready to bounce back?",
-    "🎯 One missed workout is just a small detour. Your fitness journey is a marathon, not a sprint!",
+// Simple response templates for the AI assistant
+const responseTemplates = {
+  greeting: [
+    "Hello! I'm your fitness assistant. How can I help you today?",
+    "Hi there! Ready to discuss your fitness goals?",
+    "Welcome! What would you like to know about your fitness journey?"
   ],
-  completed: [
-    "🎉 Amazing work completing your workout! You're building incredible momentum!",
-    "💪 Fantastic job! Every completed workout brings you closer to your goals!",
-    "🌟 You crushed it today! Your dedication is truly inspiring!",
-    "🔥 Outstanding effort! You're proving to yourself that you can do anything!",
-    "⚡ Incredible work! You're building habits that will transform your life!",
+  workout: [
+    "Great question about workouts! Remember, consistency is key. Based on your goals, I recommend focusing on a balanced routine.",
+    "Workouts are essential for progress. Make sure to include both strength training and cardio for optimal results.",
+    "Let's talk about your workout plan. What specific exercises are you interested in?"
+  ],
+  nutrition: [
+    "Nutrition is 70% of the battle! A balanced diet with proper macros is crucial for reaching your goals.",
+    "Great question about nutrition! Focus on whole foods, lean proteins, and complex carbs.",
+    "Your diet plays a huge role in your fitness journey. What specific nutritional guidance do you need?"
+  ],
+  hydration: [
+    "Staying hydrated is crucial! Aim for at least 8 glasses (2 liters) of water daily.",
+    "Water is essential for recovery and performance. Don't forget to drink throughout the day!",
+    "Proper hydration helps with muscle recovery and energy levels. Keep that water bottle handy!"
+  ],
+  motivation: [
+    "You're doing great! Every step forward is progress, no matter how small.",
+    "Remember why you started. Your goals are within reach!",
+    "Consistency beats perfection. Keep showing up for yourself!"
+  ],
+  default: [
+    "That's an interesting question! Let me help you with that.",
+    "I'm here to support your fitness journey. Can you tell me more about what you need?",
+    "Thanks for reaching out! How can I assist you with your fitness goals today?"
   ]
 };
 
-const workoutSuggestions = {
-  short: [
-    "🏃 Quick 15-minute HIIT session: 30 seconds work, 15 seconds rest for 6 exercises",
-    "💪 Bodyweight circuit: 10 push-ups, 15 squats, 20 jumping jacks, repeat 3 times",
-    "🧘 10-minute yoga flow focusing on flexibility and breathing",
-    "⚡ Stair climbing: 10 minutes of walking/running stairs for cardio",
-  ],
-  equipment: [
-    "🏋️ Dumbbell workout: Bicep curls, shoulder press, chest press, rows",
-    "🎯 Resistance band routine: Full body workout with bands",
-    "⚖️ Kettlebell session: Swings, goblet squats, Turkish get-ups",
-    "🏃 Treadmill intervals: Alternate between walking and jogging",
-  ],
-  bodyweight: [
-    "💪 No equipment needed: Push-ups, squats, lunges, planks, burpees",
-    "🤸 Bodyweight strength: Mountain climbers, wall sits, tricep dips",
-    "🧘 Yoga flow: Sun salutations and basic poses for flexibility",
-    "🏃 Cardio blast: Jumping jacks, high knees, butt kicks, dance moves",
-  ]
-};
+const motivationalQuotes = [
+  "The only bad workout is the one that didn't happen.",
+  "Your body can stand almost anything. It's your mind you have to convince.",
+  "Progress, not perfection.",
+  "Small steps every day lead to big changes.",
+  "Believe in yourself and all that you are."
+];
 
-export const getAssistantResponse = async (message: string): Promise<Message> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-
-  const response = chatResponses[Math.floor(Math.random() * chatResponses.length)];
-  
-  const assistantMessage: Message = {
-    id: Date.now().toString(),
-    sender: 'assistant',
-    text: response,
-    timestamp: new Date(),
-    type: 'chat',
-    quickActions: [
-      { id: 'hydration', label: '💧 Log Water', action: 'hydration' },
-      { id: 'workout', label: '💪 Get Workout', action: 'workout' },
-      { id: 'motivation', label: '🌟 Need Motivation', action: 'motivation' },
-    ]
+export const addUserMessage = (content: string, userId?: string): Message => {
+  return {
+    id: new ObjectId().toString(),
+    userId,
+    role: 'user',
+    content,
+    timestamp: new Date()
   };
+};
 
-  conversationHistory.push(assistantMessage);
+const addAssistantMessage = (content: string, userId?: string): Message => {
+  return {
+    id: new ObjectId().toString(),
+    userId,
+    role: 'assistant',
+    content,
+    timestamp: new Date()
+  };
+};
+
+export const getAssistantResponse = async (userMessage: string, userId?: string): Promise<Message> => {
+  // Save user message to database if userId is provided
+  if (userId) {
+    await saveMessage(userId, addUserMessage(userMessage, userId));
+  }
+
+  const lowerMessage = userMessage.toLowerCase();
+  let responseText = '';
+
+  // Keyword-based response generation
+  if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('hey')) {
+    responseText = responseTemplates.greeting[Math.floor(Math.random() * responseTemplates.greeting.length)];
+  } else if (lowerMessage.includes('workout') || lowerMessage.includes('exercise') || lowerMessage.includes('train')) {
+    responseText = responseTemplates.workout[Math.floor(Math.random() * responseTemplates.workout.length)];
+  } else if (lowerMessage.includes('food') || lowerMessage.includes('nutrition') || lowerMessage.includes('diet') || lowerMessage.includes('eat')) {
+    responseText = responseTemplates.nutrition[Math.floor(Math.random() * responseTemplates.nutrition.length)];
+  } else if (lowerMessage.includes('water') || lowerMessage.includes('hydration') || lowerMessage.includes('drink')) {
+    responseText = responseTemplates.hydration[Math.floor(Math.random() * responseTemplates.hydration.length)];
+  } else if (lowerMessage.includes('motivat') || lowerMessage.includes('inspire') || lowerMessage.includes('encourage')) {
+    responseText = responseTemplates.motivation[Math.floor(Math.random() * responseTemplates.motivation.length)];
+  } else {
+    responseText = responseTemplates.default[Math.floor(Math.random() * responseTemplates.default.length)];
+  }
+
+  const assistantMessage = addAssistantMessage(responseText, userId);
+
+  // Save assistant message to database if userId is provided
+  if (userId) {
+    await saveMessage(userId, assistantMessage);
+  }
+
   return assistantMessage;
 };
 
-export const getHydrationReminder = async (): Promise<Message> => {
-  await new Promise(resolve => setTimeout(resolve, 500));
+export const getHydrationReminder = async (): Promise<string> => {
+  const reminders = [
+    "💧 Time for some water! Staying hydrated helps with recovery and performance.",
+    "🚰 Don't forget to drink water! Your body needs it to function optimally.",
+    "💦 Quick reminder: Have you had water recently? Keep those hydration levels up!",
+    "🌊 Hydration check! Grab a glass of water to keep your energy levels high.",
+  ];
 
-  const reminder = hydrationReminders[Math.floor(Math.random() * hydrationReminders.length)];
-  
-  const reminderMessage: Message = {
-    id: Date.now().toString(),
-    sender: 'assistant',
-    text: reminder,
-    timestamp: new Date(),
-    type: 'hydration',
-    quickActions: [
-      { id: 'log-250ml', label: '250ml', action: 'log_water', data: { amount: 250 } },
-      { id: 'log-500ml', label: '500ml', action: 'log_water', data: { amount: 500 } },
-      { id: 'log-750ml', label: '750ml', action: 'log_water', data: { amount: 750 } },
-      { id: 'remind-later', label: 'Remind Later', action: 'remind_later' },
-    ]
-  };
-
-  conversationHistory.push(reminderMessage);
-  return reminderMessage;
+  return reminders[Math.floor(Math.random() * reminders.length)];
 };
 
-export const getWorkoutMotivation = async (status: 'missed' | 'completed'): Promise<Message> => {
-  await new Promise(resolve => setTimeout(resolve, 800));
-
-  const messages = motivationalMessages[status];
-  const motivationText = messages[Math.floor(Math.random() * messages.length)];
-  
-  const quickActions = status === 'missed' 
-    ? [
-        { id: 'quick-workout', label: '⚡ Quick 15min Workout', action: 'quick_workout' },
-        { id: 'reschedule', label: '📅 Reschedule', action: 'reschedule' },
-        { id: 'tomorrow', label: '🌅 Plan Tomorrow', action: 'plan_tomorrow' },
-      ]
-    : [
-        { id: 'log-progress', label: '📊 Log Progress', action: 'log_progress' },
-        { id: 'share-achievement', label: '🎉 Share Achievement', action: 'share' },
-        { id: 'plan-next', label: '➡️ Plan Next Workout', action: 'plan_next' },
-      ];
-
-  const motivationMessage: Message = {
-    id: Date.now().toString(),
-    sender: 'assistant',
-    text: motivationText,
-    timestamp: new Date(),
-    type: 'motivation',
-    quickActions
-  };
-
-  conversationHistory.push(motivationMessage);
-  return motivationMessage;
-};
-
-export const getWorkoutSuggestion = async (preferences: {
-  time?: string;
-  equipment?: string;
-  fitnessLevel?: string;
-}): Promise<Message> => {
-  await new Promise(resolve => setTimeout(resolve, 1200));
-
-  let suggestions: string[];
-  let suggestionText = "Here are some workout alternatives based on your preferences:\n\n";
-
-  if (preferences.time === 'short') {
-    suggestions = workoutSuggestions.short;
-    suggestionText += "⏰ Since you're short on time, here are quick options:\n\n";
-  } else if (preferences.equipment === 'none') {
-    suggestions = workoutSuggestions.bodyweight;
-    suggestionText += "🏠 No equipment? No problem! Try these bodyweight exercises:\n\n";
-  } else if (preferences.equipment === 'available') {
-    suggestions = workoutSuggestions.equipment;
-    suggestionText += "🏋️ Great! Here are some equipment-based workouts:\n\n";
+export const getWorkoutMotivation = async (status: 'missed' | 'completed'): Promise<string> => {
+  if (status === 'completed') {
+    const completedMessages = [
+      "🎉 Awesome work! You crushed that workout!",
+      "💪 Great job completing your workout! You're one step closer to your goals!",
+      "🔥 That's what I'm talking about! Keep up the amazing work!",
+      "⭐ You did it! Every workout counts towards your success!",
+      "🏆 Fantastic! Your dedication is paying off!"
+    ];
+    return completedMessages[Math.floor(Math.random() * completedMessages.length)];
   } else {
-    suggestions = [...workoutSuggestions.short, ...workoutSuggestions.bodyweight].slice(0, 3);
-    suggestionText += "Here are some flexible options for you:\n\n";
+    const missedMessages = [
+      "Don't worry! Tomorrow is a new opportunity. You've got this! 💪",
+      "It's okay to miss a workout. What matters is getting back on track tomorrow! 🎯",
+      "Life happens! Let's make the next workout count. You're still awesome! ⚡",
+      "No problem! Rest is important too. Come back stronger tomorrow! 💯",
+      "Missing one workout doesn't define your journey. Keep moving forward! 🚀"
+    ];
+    return missedMessages[Math.floor(Math.random() * missedMessages.length)];
   }
-
-  const selectedSuggestions = suggestions.slice(0, 3);
-  suggestionText += selectedSuggestions.join('\n\n');
-
-  const suggestionMessage: Message = {
-    id: Date.now().toString(),
-    sender: 'assistant',
-    text: suggestionText,
-    timestamp: new Date(),
-    type: 'suggestion',
-    quickActions: [
-      { id: 'start-workout', label: '🚀 Start Workout', action: 'start_workout' },
-      { id: 'save-for-later', label: '💾 Save for Later', action: 'save_workout' },
-      { id: 'more-options', label: '🔄 More Options', action: 'more_suggestions' },
-    ]
-  };
-
-  conversationHistory.push(suggestionMessage);
-  return suggestionMessage;
 };
 
-export const getConversationHistory = (): Message[] => {
-  return conversationHistory;
+export const getWorkoutSuggestion = async (preferences: any = {}): Promise<string> => {
+  const suggestions = [
+    "How about a 30-minute full-body workout? Try: Push-ups (3x12), Squats (3x15), Planks (3x30s), and Jumping Jacks (3x1min).",
+    "Let's do a HIIT session! 20 seconds work, 10 seconds rest: Burpees, Mountain Climbers, Jump Squats, High Knees. Repeat 4 rounds.",
+    "Time for strength training! Focus on: Deadlifts (3x8), Pull-ups (3x8), Bench Press (3x10), and Shoulder Press (3x10).",
+    "Cardio day! Try a 45-minute run or cycling session at moderate intensity. Mix in some intervals for extra challenge!",
+    "Flexibility focus! Try a 30-minute yoga session with Downward Dog, Warrior Poses, Child's Pose, and Pigeon Pose."
+  ];
+
+  return suggestions[Math.floor(Math.random() * suggestions.length)];
 };
 
-export const addUserMessage = (text: string): Message => {
-  const userMessage: Message = {
-    id: Date.now().toString(),
-    sender: 'user',
-    text,
-    timestamp: new Date(),
-    type: 'chat'
-  };
+const saveMessage = async (userId: string, message: Message): Promise<void> => {
+  const db = await getDB();
+  const conversationsCollection = db.collection<ConversationHistory>('conversations');
 
-  conversationHistory.push(userMessage);
-  return userMessage;
+  const conversation = await conversationsCollection.findOne({ userId });
+
+  if (conversation) {
+    await conversationsCollection.updateOne(
+      { userId },
+      {
+        $push: { messages: message },
+        $set: { lastUpdated: new Date() }
+      }
+    );
+  } else {
+    const newConversation: ConversationHistory = {
+      userId,
+      messages: [message],
+      lastUpdated: new Date()
+    };
+    await conversationsCollection.insertOne(newConversation);
+  }
+};
+
+export const getConversationHistory = async (userId: string, limit: number = 20): Promise<Message[]> => {
+  const db = await getDB();
+  const conversationsCollection = db.collection<ConversationHistory>('conversations');
+
+  const conversation = await conversationsCollection.findOne({ userId });
+
+  if (!conversation) return [];
+
+  return conversation.messages.slice(-limit);
+};
+
+export const clearConversationHistory = async (userId: string): Promise<void> => {
+  const db = await getDB();
+  const conversationsCollection = db.collection<ConversationHistory>('conversations');
+
+  await conversationsCollection.deleteOne({ userId });
 };

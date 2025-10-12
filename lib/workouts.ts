@@ -1,33 +1,39 @@
+import { getDB } from './mongodb';
+import { ObjectId } from 'mongodb';
+import { awardPoints, updateStreak, POINT_STRUCTURE } from './gamification';
+
 export interface Exercise {
   id: string;
   name: string;
   type: 'strength' | 'cardio' | 'yoga' | 'flexibility' | 'hiit';
-  duration?: number; // in minutes
+  duration?: number;
   sets?: number;
   reps?: number;
-  restTime?: number; // in seconds
+  restTime?: number;
   difficulty: 'beginner' | 'intermediate' | 'advanced';
   instructions: string;
   targetMuscles: string[];
   equipment?: string[];
-  caloriesBurned?: number; // estimated per session
+  caloriesBurned?: number;
 }
 
 export interface WorkoutSession {
+  _id?: ObjectId;
   id: string;
   userId: string;
-  date: string; // YYYY-MM-DD format
+  date: string;
   name: string;
   type: 'strength' | 'cardio' | 'yoga' | 'flexibility' | 'hiit' | 'mixed';
   exercises: Exercise[];
-  totalDuration: number; // in minutes
+  totalDuration: number;
   difficulty: 'beginner' | 'intermediate' | 'advanced';
   completed: boolean;
   completedAt?: Date;
-  completedExercises: string[]; // exercise IDs
+  completedExercises: string[];
 }
 
 export interface WorkoutPlan {
+  _id?: ObjectId;
   id: string;
   userId: string;
   name: string;
@@ -45,20 +51,13 @@ export interface WorkoutProgress {
   totalSessions: number;
   completedExercises: number;
   totalExercises: number;
-  totalDuration: number; // minutes worked out
+  totalDuration: number;
   caloriesBurned: number;
-  streak: number; // consecutive days with completed workouts
+  streak: number;
 }
-import { awardPoints, updateStreak, POINT_STRUCTURE } from './gamification';
-
-// Mock database
-const workoutPlans: WorkoutPlan[] = [];
-const workoutSessions: WorkoutSession[] = [];
-const workoutProgress: WorkoutProgress[] = [];
 
 // Exercise database
 export const exerciseDatabase: Exercise[] = [
-  // Strength Training
   {
     id: 'push-ups',
     name: 'Push-ups',
@@ -111,8 +110,6 @@ export const exerciseDatabase: Exercise[] = [
     equipment: ['pull-up bar'],
     caloriesBurned: 70
   },
-  
-  // Cardio
   {
     id: 'jumping-jacks',
     name: 'Jumping Jacks',
@@ -148,8 +145,6 @@ export const exerciseDatabase: Exercise[] = [
     equipment: [],
     caloriesBurned: 60
   },
-  
-  // Yoga
   {
     id: 'downward-dog',
     name: 'Downward Facing Dog',
@@ -183,8 +178,6 @@ export const exerciseDatabase: Exercise[] = [
     equipment: ['yoga mat'],
     caloriesBurned: 10
   },
-  
-  // Flexibility
   {
     id: 'forward-fold',
     name: 'Standing Forward Fold',
@@ -209,7 +202,6 @@ export const exerciseDatabase: Exercise[] = [
   }
 ];
 
-// Workout plan templates
 const workoutTemplates = {
   weight_loss: {
     name: 'Weight Loss Program',
@@ -243,7 +235,6 @@ const workoutTemplates = {
   }
 };
 
-// Generate workout plan
 export const generateWorkoutPlan = async (
   userId: string,
   goal: 'weight_loss' | 'muscle_gain' | 'flexibility' | 'endurance' | 'general_fitness',
@@ -255,7 +246,7 @@ export const generateWorkoutPlan = async (
   endDate.setDate(endDate.getDate() + (weeks * 7));
 
   const plan: WorkoutPlan = {
-    id: Date.now().toString(),
+    id: new ObjectId().toString(),
     userId,
     name: template.name,
     goal,
@@ -265,7 +256,9 @@ export const generateWorkoutPlan = async (
     createdAt: new Date()
   };
 
-  // Generate sessions for each week
+  const db = await getDB();
+  const sessionsCollection = db.collection<WorkoutSession>('workoutSessions');
+
   for (let week = 0; week < weeks; week++) {
     for (let session = 0; session < template.sessionsPerWeek; session++) {
       const sessionDate = new Date(startDate);
@@ -288,11 +281,13 @@ export const generateWorkoutPlan = async (
       };
 
       plan.sessions.push(workoutSession);
-      workoutSessions.push(workoutSession);
+      await sessionsCollection.insertOne(workoutSession);
     }
   }
 
-  workoutPlans.push(plan);
+  const plansCollection = db.collection<WorkoutPlan>('workoutPlans');
+  await plansCollection.insertOne(plan);
+
   return plan;
 };
 
@@ -306,7 +301,6 @@ const getExercisesForType = (
     filteredExercises = exerciseDatabase.filter(ex => ex.type === 'strength');
   }
 
-  // Select 4-6 exercises based on goal
   const exerciseCount = goal === 'muscle_gain' ? 6 : goal === 'flexibility' ? 8 : 5;
   return filteredExercises.slice(0, exerciseCount);
 };
@@ -322,88 +316,121 @@ const getDifficultyForGoal = (goal: string): 'beginner' | 'intermediate' | 'adva
   }
 };
 
-// Get workout plans for user
 export const getWorkoutPlansForUser = async (userId: string): Promise<WorkoutPlan[]> => {
-  return workoutPlans.filter(plan => plan.userId === userId);
+  const db = await getDB();
+  const plansCollection = db.collection<WorkoutPlan>('workoutPlans');
+  
+  const plans = await plansCollection
+    .find({ userId })
+    .sort({ createdAt: -1 })
+    .toArray();
+  
+  return plans;
 };
 
-// Get workout sessions for date range
 export const getWorkoutSessions = async (
   userId: string,
   startDate: string,
   endDate: string
 ): Promise<WorkoutSession[]> => {
-  return workoutSessions.filter(session => 
-    session.userId === userId &&
-    session.date >= startDate &&
-    session.date <= endDate
-  );
+  const db = await getDB();
+  const sessionsCollection = db.collection<WorkoutSession>('workoutSessions');
+  
+  const sessions = await sessionsCollection
+    .find({
+      userId,
+      date: { $gte: startDate, $lte: endDate }
+    })
+    .sort({ date: 1 })
+    .toArray();
+  
+  return sessions;
 };
 
-// Get today's workout
 export const getTodaysWorkout = async (userId: string): Promise<WorkoutSession | null> => {
   const today = new Date().toISOString().split('T')[0];
-  return workoutSessions.find(session => 
-    session.userId === userId && session.date === today
-  ) || null;
+  const db = await getDB();
+  const sessionsCollection = db.collection<WorkoutSession>('workoutSessions');
+  
+  const session = await sessionsCollection.findOne({ userId, date: today });
+  return session;
 };
 
-// Mark exercise as completed
 export const markExerciseCompleted = async (
   userId: string,
   sessionId: string,
   exerciseId: string
 ): Promise<WorkoutSession | null> => {
-  const session = workoutSessions.find(s => s.id === sessionId && s.userId === userId);
+  const db = await getDB();
+  const sessionsCollection = db.collection<WorkoutSession>('workoutSessions');
+  
+  const session = await sessionsCollection.findOne({ id: sessionId, userId });
   if (!session) return null;
 
   if (!session.completedExercises.includes(exerciseId)) {
     session.completedExercises.push(exerciseId);
-    
-    // Award points for exercise completion
     await awardPoints(userId, 'workout_completed', POINT_STRUCTURE.workout_completed);
   }
 
-  // Check if all exercises are completed
   if (session.completedExercises.length === session.exercises.length) {
     session.completed = true;
     session.completedAt = new Date();
     
-    // Award bonus points for workout completion and update streak
     const bonusPoints = session.totalDuration > 45 ? POINT_STRUCTURE.workout_completed_bonus : 0;
     if (bonusPoints > 0) {
       await awardPoints(userId, 'workout_completed_bonus', bonusPoints);
     }
     
-    // Update workout streak
     await updateStreak(userId, 'workout', session.date, true);
   }
+
+  await sessionsCollection.updateOne(
+    { id: sessionId, userId },
+    { 
+      $set: { 
+        completedExercises: session.completedExercises,
+        completed: session.completed,
+        completedAt: session.completedAt
+      }
+    }
+  );
 
   return session;
 };
 
-// Mark exercise as uncompleted
 export const markExerciseUncompleted = async (
   userId: string,
   sessionId: string,
   exerciseId: string
 ): Promise<WorkoutSession | null> => {
-  const session = workoutSessions.find(s => s.id === sessionId && s.userId === userId);
+  const db = await getDB();
+  const sessionsCollection = db.collection<WorkoutSession>('workoutSessions');
+  
+  const session = await sessionsCollection.findOne({ id: sessionId, userId });
   if (!session) return null;
 
   session.completedExercises = session.completedExercises.filter(id => id !== exerciseId);
   session.completed = false;
   session.completedAt = undefined;
   
-  // If workout becomes incomplete, potentially break streak
   if (session.completedExercises.length === 0) {
     await updateStreak(userId, 'workout', session.date, false);
   }
 
+  await sessionsCollection.updateOne(
+    { id: sessionId, userId },
+    { 
+      $set: { 
+        completedExercises: session.completedExercises,
+        completed: session.completed
+      },
+      $unset: { completedAt: "" }
+    }
+  );
+
   return session;
 };
 
-// Get workout progress for date range
 export const getWorkoutProgress = async (
   userId: string,
   startDate: string,
@@ -442,35 +469,33 @@ export const getWorkoutProgress = async (
   return Object.values(progressByDate);
 };
 
-// Calculate workout streak
 export const getWorkoutStreak = async (userId: string): Promise<number> => {
+  const db = await getDB();
+  const sessionsCollection = db.collection<WorkoutSession>('workoutSessions');
+  
   const today = new Date();
   let streak = 0;
   let currentDate = new Date(today);
 
-  while (true) {
+  while (streak < 365) {
     const dateStr = currentDate.toISOString().split('T')[0];
-    const daysSessions = workoutSessions.filter(s => 
-      s.userId === userId && 
-      s.date === dateStr && 
-      s.completed
-    );
+    const daysSessions = await sessionsCollection.countDocuments({
+      userId,
+      date: dateStr,
+      completed: true
+    });
 
-    if (daysSessions.length > 0) {
+    if (daysSessions > 0) {
       streak++;
       currentDate.setDate(currentDate.getDate() - 1);
     } else {
       break;
     }
-
-    // Prevent infinite loop
-    if (streak > 365) break;
   }
 
   return streak;
 };
 
-// Get weekly progress summary
 export const getWeeklyProgress = async (userId: string): Promise<{
   completedSessions: number;
   totalSessions: number;

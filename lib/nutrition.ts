@@ -1,25 +1,31 @@
+import { getDB } from './mongodb';
+import { ObjectId } from 'mongodb';
+import { awardPoints, updateStreak, POINT_STRUCTURE } from './gamification';
+
 export interface NutritionGoal {
+  _id?: ObjectId;
   id: string;
   userId: string;
   calories: number;
-  protein: number; // in grams
-  carbs: number; // in grams
-  fat: number; // in grams
+  protein: number;
+  carbs: number;
+  fat: number;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface FoodEntry {
+  _id?: ObjectId;
   id: string;
   userId: string;
-  date: string; // YYYY-MM-DD format
+  date: string;
   name: string;
   calories: number;
-  protein: number; // in grams
-  carbs: number; // in grams
-  fat: number; // in grams
+  protein: number;
+  carbs: number;
+  fat: number;
   quantity: number;
-  unit: string; // e.g., "serving", "cup", "gram"
+  unit: string;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   createdAt: Date;
 }
@@ -33,6 +39,7 @@ export interface DailyTotals {
 }
 
 export interface MealPlan {
+  _id?: ObjectId;
   id: string;
   userId: string;
   name: string;
@@ -52,14 +59,8 @@ export interface MealPlanEntry {
   totalCarbs: number;
   totalFat: number;
 }
-import { awardPoints, updateStreak, POINT_STRUCTURE } from './gamification';
 
-// Mock database
-const nutritionGoals: NutritionGoal[] = [];
-const foodEntries: FoodEntry[] = [];
-const mealPlans: MealPlan[] = [];
-
-// Common foods database for suggestions
+// Common foods database
 export const commonFoods = [
   { name: 'Chicken Breast (100g)', calories: 165, protein: 31, carbs: 0, fat: 3.6 },
   { name: 'Brown Rice (1 cup cooked)', calories: 216, protein: 5, carbs: 45, fat: 1.8 },
@@ -75,7 +76,11 @@ export const commonFoods = [
 
 // Nutrition Goals Functions
 export const getNutritionGoal = async (userId: string): Promise<NutritionGoal | null> => {
-  return nutritionGoals.find(goal => goal.userId === userId) || null;
+  const db = await getDB();
+  const goalsCollection = db.collection<NutritionGoal>('nutritionGoals');
+  
+  const goal = await goalsCollection.findOne({ userId });
+  return goal;
 };
 
 export const setNutritionGoal = async (
@@ -85,21 +90,30 @@ export const setNutritionGoal = async (
   carbs: number,
   fat: number
 ): Promise<NutritionGoal> => {
-  const existingGoalIndex = nutritionGoals.findIndex(goal => goal.userId === userId);
+  const db = await getDB();
+  const goalsCollection = db.collection<NutritionGoal>('nutritionGoals');
   
-  if (existingGoalIndex !== -1) {
-    nutritionGoals[existingGoalIndex] = {
-      ...nutritionGoals[existingGoalIndex],
+  const existingGoal = await goalsCollection.findOne({ userId });
+  
+  if (existingGoal) {
+    const updatedGoal = {
+      ...existingGoal,
       calories,
       protein,
       carbs,
       fat,
       updatedAt: new Date(),
     };
-    return nutritionGoals[existingGoalIndex];
+    
+    await goalsCollection.updateOne(
+      { userId },
+      { $set: updatedGoal }
+    );
+    
+    return updatedGoal;
   } else {
     const newGoal: NutritionGoal = {
-      id: Date.now().toString(),
+      id: new ObjectId().toString(),
       userId,
       calories,
       protein,
@@ -108,7 +122,8 @@ export const setNutritionGoal = async (
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    nutritionGoals.push(newGoal);
+    
+    await goalsCollection.insertOne(newGoal);
     return newGoal;
   }
 };
@@ -126,8 +141,11 @@ export const addFoodEntry = async (
   unit: string = 'serving',
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack' = 'lunch'
 ): Promise<FoodEntry> => {
+  const db = await getDB();
+  const entriesCollection = db.collection<FoodEntry>('foodEntries');
+  
   const entry: FoodEntry = {
-    id: Date.now().toString(),
+    id: new ObjectId().toString(),
     userId,
     date,
     name,
@@ -141,14 +159,14 @@ export const addFoodEntry = async (
     createdAt: new Date(),
   };
   
-  foodEntries.push(entry);
+  await entriesCollection.insertOne(entry);
   
   // Award points for meal logging
   await awardPoints(userId, 'meal_logged', POINT_STRUCTURE.meal_logged);
   
-  // Check if this is the first meal of the day to update nutrition streak
-  const todayEntries = foodEntries.filter(e => e.userId === userId && e.date === date);
-  if (todayEntries.length >= 3) { // At least 3 meals logged
+  // Check if this is 3+ meals logged today
+  const todayEntries = await entriesCollection.countDocuments({ userId, date });
+  if (todayEntries >= 3) {
     await updateStreak(userId, 'nutrition', date, true);
     await awardPoints(userId, 'daily_nutrition_goal', POINT_STRUCTURE.daily_nutrition_goal);
   }
@@ -157,7 +175,15 @@ export const addFoodEntry = async (
 };
 
 export const getFoodEntriesForDate = async (userId: string, date: string): Promise<FoodEntry[]> => {
-  return foodEntries.filter(entry => entry.userId === userId && entry.date === date);
+  const db = await getDB();
+  const entriesCollection = db.collection<FoodEntry>('foodEntries');
+  
+  const entries = await entriesCollection
+    .find({ userId, date })
+    .sort({ createdAt: 1 })
+    .toArray();
+  
+  return entries;
 };
 
 export const getDailyTotals = async (userId: string, date: string): Promise<DailyTotals> => {
@@ -177,12 +203,11 @@ export const getDailyTotals = async (userId: string, date: string): Promise<Dail
 };
 
 export const deleteFoodEntry = async (userId: string, entryId: string): Promise<boolean> => {
-  const entryIndex = foodEntries.findIndex(entry => entry.id === entryId && entry.userId === userId);
-  if (entryIndex !== -1) {
-    foodEntries.splice(entryIndex, 1);
-    return true;
-  }
-  return false;
+  const db = await getDB();
+  const entriesCollection = db.collection<FoodEntry>('foodEntries');
+  
+  const result = await entriesCollection.deleteOne({ id: entryId, userId });
+  return result.deletedCount > 0;
 };
 
 // Meal Planning Functions
@@ -197,9 +222,8 @@ export const generateMealPlan = async (
     throw new Error('Nutrition goals must be set before generating meal plan');
   }
 
-  // Simple meal plan generation based on fitness goals
   const mealPlan: MealPlan = {
-    id: Date.now().toString(),
+    id: new ObjectId().toString(),
     userId,
     name: `${fitnessGoal.replace('_', ' ').toUpperCase()} Plan`,
     startDate,
@@ -208,63 +232,34 @@ export const generateMealPlan = async (
     createdAt: new Date(),
   };
 
-  // Generate meals for each day
   const start = new Date(startDate);
   const end = new Date(endDate);
   
   for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
     const dateStr = date.toISOString().split('T')[0];
     
-    // Generate breakfast
-    const breakfast = generateMealForType('breakfast', goal, fitnessGoal);
-    mealPlan.meals.push({
-      id: `${dateStr}-breakfast`,
-      date: dateStr,
-      mealType: 'breakfast',
-      foods: breakfast.foods,
-      totalCalories: breakfast.totalCalories,
-      totalProtein: breakfast.totalProtein,
-      totalCarbs: breakfast.totalCarbs,
-      totalFat: breakfast.totalFat,
-    });
-
-    // Generate lunch
-    const lunch = generateMealForType('lunch', goal, fitnessGoal);
-    mealPlan.meals.push({
-      id: `${dateStr}-lunch`,
-      date: dateStr,
-      mealType: 'lunch',
-      foods: lunch.foods,
-      totalCalories: lunch.totalCalories,
-      totalProtein: lunch.totalProtein,
-      totalCarbs: lunch.totalCarbs,
-      totalFat: lunch.totalFat,
-    });
-
-    // Generate dinner
-    const dinner = generateMealForType('dinner', goal, fitnessGoal);
-    mealPlan.meals.push({
-      id: `${dateStr}-dinner`,
-      date: dateStr,
-      mealType: 'dinner',
-      foods: dinner.foods,
-      totalCalories: dinner.totalCalories,
-      totalProtein: dinner.totalProtein,
-      totalCarbs: dinner.totalCarbs,
-      totalFat: dinner.totalFat,
-    });
+    // Generate meals for each meal type
+    const breakfast = generateMealForType('breakfast', goal, fitnessGoal, userId, dateStr);
+    const lunch = generateMealForType('lunch', goal, fitnessGoal, userId, dateStr);
+    const dinner = generateMealForType('dinner', goal, fitnessGoal, userId, dateStr);
+    
+    mealPlan.meals.push(breakfast, lunch, dinner);
   }
 
-  mealPlans.push(mealPlan);
+  const db = await getDB();
+  const mealPlansCollection = db.collection<MealPlan>('mealPlans');
+  await mealPlansCollection.insertOne(mealPlan);
+
   return mealPlan;
 };
 
 const generateMealForType = (
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack',
   goal: NutritionGoal,
-  fitnessGoal: 'lose_weight' | 'gain_muscle' | 'maintain_fitness'
-) => {
-  // Distribute calories across meals (breakfast: 25%, lunch: 35%, dinner: 40%)
+  fitnessGoal: 'lose_weight' | 'gain_muscle' | 'maintain_fitness',
+  userId: string,
+  dateStr: string
+): MealPlanEntry => {
   const calorieDistribution = {
     breakfast: 0.25,
     lunch: 0.35,
@@ -279,7 +274,6 @@ const generateMealForType = (
   let totalCarbs = 0;
   let totalFat = 0;
 
-  // Select foods based on meal type and fitness goal
   const mealFoods = getMealFoodsForType(mealType, fitnessGoal);
   
   for (const food of mealFoods) {
@@ -287,9 +281,9 @@ const generateMealForType = (
       const quantity = Math.min(2, Math.ceil((targetCalories - totalCalories) / food.calories));
       
       const foodEntry: FoodEntry = {
-        id: `${Date.now()}-${Math.random()}`,
-        userId: goal.userId,
-        date: new Date().toISOString().split('T')[0],
+        id: `${new ObjectId().toString()}`,
+        userId,
+        date: dateStr,
         name: food.name,
         calories: food.calories * quantity,
         protein: food.protein * quantity,
@@ -309,7 +303,16 @@ const generateMealForType = (
     }
   }
 
-  return { foods, totalCalories, totalProtein, totalCarbs, totalFat };
+  return {
+    id: `${dateStr}-${mealType}`,
+    date: dateStr,
+    mealType,
+    foods,
+    totalCalories,
+    totalProtein,
+    totalCarbs,
+    totalFat,
+  };
 };
 
 const getMealFoodsForType = (
@@ -345,19 +348,26 @@ const getMealFoodsForType = (
 };
 
 export const getMealPlansForUser = async (userId: string): Promise<MealPlan[]> => {
-  return mealPlans.filter(plan => plan.userId === userId);
+  const db = await getDB();
+  const mealPlansCollection = db.collection<MealPlan>('mealPlans');
+  
+  const plans = await mealPlansCollection
+    .find({ userId })
+    .sort({ createdAt: -1 })
+    .toArray();
+  
+  return plans;
 };
 
-// Calculate recommended nutrition goals based on user profile
+// Calculate recommended nutrition goals
 export const calculateRecommendedGoals = (
   age: number,
-  weight: number, // in kg
-  height: number, // in cm
+  weight: number,
+  height: number,
   gender: 'male' | 'female',
   activityLevel: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active',
   fitnessGoal: 'lose_weight' | 'gain_muscle' | 'maintain_fitness'
 ) => {
-  // Calculate BMR using Mifflin-St Jeor Equation
   let bmr: number;
   if (gender === 'male') {
     bmr = 10 * weight + 6.25 * height - 5 * age + 5;
@@ -365,7 +375,6 @@ export const calculateRecommendedGoals = (
     bmr = 10 * weight + 6.25 * height - 5 * age - 161;
   }
 
-  // Activity multipliers
   const activityMultipliers = {
     sedentary: 1.2,
     light: 1.375,
@@ -376,23 +385,20 @@ export const calculateRecommendedGoals = (
 
   let tdee = bmr * activityMultipliers[activityLevel];
 
-  // Adjust for fitness goals
   switch (fitnessGoal) {
     case 'lose_weight':
-      tdee *= 0.8; // 20% deficit
+      tdee *= 0.8;
       break;
     case 'gain_muscle':
-      tdee *= 1.1; // 10% surplus
+      tdee *= 1.1;
       break;
     case 'maintain_fitness':
-      // Keep TDEE as is
       break;
   }
 
-  // Calculate macronutrient distribution
-  const protein = weight * (fitnessGoal === 'gain_muscle' ? 2.2 : 1.6); // g per kg body weight
-  const fat = tdee * 0.25 / 9; // 25% of calories from fat (9 cal/g)
-  const carbs = (tdee - (protein * 4) - (fat * 9)) / 4; // Remaining calories from carbs (4 cal/g)
+  const protein = weight * (fitnessGoal === 'gain_muscle' ? 2.2 : 1.6);
+  const fat = tdee * 0.25 / 9;
+  const carbs = (tdee - (protein * 4) - (fat * 9)) / 4;
 
   return {
     calories: Math.round(tdee),
