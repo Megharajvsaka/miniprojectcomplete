@@ -1,12 +1,19 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Loader as Loader2 } from 'lucide-react';
+import { Send, Bot, User, Loader2 } from 'lucide-react';
 import Cookies from 'js-cookie';
-import { Message, QuickAction } from '@/lib/ai-assistant';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
 
 export default function AIAssistantChat() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,25 +28,86 @@ export default function AIAssistantChat() {
   }, [messages]);
 
   useEffect(() => {
-    // Send initial greeting
-    const initialGreeting: Message = {
-      id: 'initial',
-      sender: 'assistant',
-      text: "👋 Hi there! I'm your AI fitness assistant. I'm here to help you stay motivated, track your hydration, and suggest workouts. How can I support your fitness journey today?",
-      timestamp: new Date(),
-      type: 'chat',
-      quickActions: [
-        { id: 'hydration-reminder', label: '💧 Hydration Reminder', action: 'hydration_reminder' },
-        { id: 'workout-motivation', label: '💪 Need Motivation', action: 'workout_motivation' },
-        { id: 'workout-suggestion', label: '🏃 Suggest Workout', action: 'workout_suggestion' },
-      ]
+    // Load conversation history
+    const initializeChat = async () => {
+      try {
+        const token = Cookies.get('token');
+        const response = await fetch('/api/ai-assistant/chat?limit=20', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.history && data.history.length > 0) {
+            setMessages(data.history.map((msg: any) => ({
+              id: msg.id,
+              role: msg.role,
+              content: msg.content,
+              timestamp: new Date(msg.timestamp)
+            })));
+          } else {
+            // Only show greeting if no history
+            const initialGreeting: ChatMessage = {
+              id: 'initial',
+              role: 'assistant',
+              content: "👋 Hi there! I'm your AI fitness assistant. I'm here to help you stay motivated, track your hydration, and suggest workouts. How can I support your fitness journey today?",
+              timestamp: new Date(),
+            };
+            setMessages([initialGreeting]);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load history:', error);
+        // Show greeting on error
+        const initialGreeting: ChatMessage = {
+          id: 'initial',
+          role: 'assistant',
+          content: "👋 Hi there! I'm your AI fitness assistant. I'm here to help you stay motivated, track your hydration, and suggest workouts. How can I support your fitness journey today?",
+          timestamp: new Date(),
+        };
+        setMessages([initialGreeting]);
+      }
     };
-    setMessages([initialGreeting]);
-  }, []);
+
+    initializeChat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+
+  const loadHistory = async () => {
+    try {
+      const token = Cookies.get('token');
+      const response = await fetch('/api/ai-assistant/chat?limit=20', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.history && data.history.length > 0) {
+          setMessages(data.history.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp)
+          })));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    }
+  };
 
   const sendMessage = async (messageText: string) => {
     if (!messageText.trim() || loading) return;
 
+    // Add user message immediately for better UX
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: messageText,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
     setLoading(true);
     setError('');
 
@@ -56,95 +124,93 @@ export default function AIAssistantChat() {
 
       if (response.ok) {
         const data = await response.json();
-        setMessages(prev => [...prev, data.userMessage, data.assistantResponse]);
-        setInput('');
+        
+        // Add assistant response
+        const assistantMsg: ChatMessage = {
+          id: data.assistantResponse.id,
+          role: 'assistant',
+          content: data.assistantResponse.content,
+          timestamp: new Date(data.assistantResponse.timestamp),
+        };
+        setMessages(prev => [...prev, assistantMsg]);
       } else {
         const errorData = await response.json();
         setError(errorData.error || 'Failed to send message');
+        // Remove the optimistically added user message on error
+        setMessages(prev => prev.filter(m => m.id !== userMsg.id));
       }
     } catch (error) {
       setError('Network error occurred');
+      // Remove the optimistically added user message on error
+      setMessages(prev => prev.filter(m => m.id !== userMsg.id));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickAction = async (action: QuickAction) => {
+  const handleQuickAction = async (action: string, label: string) => {
     setLoading(true);
     setError('');
 
     try {
       const token = Cookies.get('token');
       let response;
+      let resultMessage = '';
 
-      switch (action.action) {
+      switch (action) {
         case 'hydration_reminder':
-        case 'hydration':
           response = await fetch('/api/ai-assistant/hydration-reminder', {
             headers: { Authorization: `Bearer ${token}` },
           });
+          if (response.ok) {
+            const data = await response.json();
+            resultMessage = data.message;
+          }
           break;
 
         case 'workout_motivation':
-        case 'motivation':
           response = await fetch('/api/ai-assistant/workout-motivation', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ status: 'missed' }),
+            body: JSON.stringify({ status: 'completed' }),
           });
+          if (response.ok) {
+            const data = await response.json();
+            resultMessage = data.message;
+          }
           break;
 
         case 'workout_suggestion':
-        case 'workout':
           response = await fetch('/api/ai-assistant/workout-suggestion', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ preferences: { time: 'short' } }),
+            body: JSON.stringify({ preferences: {} }),
           });
-          break;
-
-        case 'log_water':
-          // Handle water logging
-          if (action.data?.amount) {
-            const hydrationResponse = await fetch('/api/hydration', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ amount: action.data.amount }),
-            });
-
-            if (hydrationResponse.ok) {
-              const confirmationMessage: Message = {
-                id: Date.now().toString(),
-                sender: 'assistant',
-                text: `✅ Great! I've logged ${action.data.amount}ml of water for you. Keep up the good hydration habits!`,
-                timestamp: new Date(),
-                type: 'hydration',
-              };
-              setMessages(prev => [...prev, confirmationMessage]);
-              setLoading(false);
-              return;
-            }
+          if (response.ok) {
+            const data = await response.json();
+            resultMessage = data.message;
           }
           break;
 
         default:
-          // For other actions, send as a regular message
-          await sendMessage(`I clicked: ${action.label}`);
+          await sendMessage(label);
           return;
       }
 
-      if (response && response.ok) {
-        const data = await response.json();
-        setMessages(prev => [...prev, data.message]);
+      if (resultMessage) {
+        const assistantMsg: ChatMessage = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: resultMessage,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, assistantMsg]);
       } else {
         setError('Failed to process action');
       }
@@ -174,22 +240,22 @@ export default function AIAssistantChat() {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
               className={`max-w-xs lg:max-w-md xl:max-w-lg flex ${
-                message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'
+                message.role === 'user' ? 'flex-row-reverse' : 'flex-row'
               } items-start space-x-2`}
             >
               {/* Avatar */}
               <div
                 className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                  message.sender === 'user'
+                  message.role === 'user'
                     ? 'bg-blue-500 ml-2'
                     : 'bg-purple-500 mr-2'
                 }`}
               >
-                {message.sender === 'user' ? (
+                {message.role === 'user' ? (
                   <User className="h-4 w-4 text-white" />
                 ) : (
                   <Bot className="h-4 w-4 text-white" />
@@ -200,42 +266,53 @@ export default function AIAssistantChat() {
               <div className="flex flex-col">
                 <div
                   className={`px-4 py-2 rounded-2xl ${
-                    message.sender === 'user'
+                    message.role === 'user'
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-700 text-white'
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                 </div>
 
                 {/* Timestamp */}
                 <span
                   className={`text-xs text-gray-400 mt-1 ${
-                    message.sender === 'user' ? 'text-right' : 'text-left'
+                    message.role === 'user' ? 'text-right' : 'text-left'
                   }`}
                 >
                   {formatTime(message.timestamp)}
                 </span>
-
-                {/* Quick Actions */}
-                {message.quickActions && message.quickActions.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {message.quickActions.map((action) => (
-                      <button
-                        key={action.id}
-                        onClick={() => handleQuickAction(action)}
-                        disabled={loading}
-                        className="px-3 py-1 text-xs bg-purple-500/20 border border-purple-500/30 rounded-full text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           </div>
         ))}
+
+        {/* Quick Actions (only show on initial greeting) */}
+        {messages.length === 1 && messages[0].role === 'assistant' && (
+          <div className="flex flex-wrap gap-2 justify-center mt-4">
+            <button
+              onClick={() => handleQuickAction('hydration_reminder', '💧 Hydration Reminder')}
+              disabled={loading}
+              className="px-3 py-2 text-sm bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              💧 Hydration Reminder
+            </button>
+            <button
+              onClick={() => handleQuickAction('workout_motivation', '💪 Need Motivation')}
+              disabled={loading}
+              className="px-3 py-2 text-sm bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              💪 Need Motivation
+            </button>
+            <button
+              onClick={() => handleQuickAction('workout_suggestion', '🏃 Suggest Workout')}
+              disabled={loading}
+              className="px-3 py-2 text-sm bg-purple-500/20 border border-purple-500/30 rounded-lg text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              🏃 Suggest Workout
+            </button>
+          </div>
+        )}
 
         {/* Typing Indicator */}
         {loading && (

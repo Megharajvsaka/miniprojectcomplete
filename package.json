@@ -2,7 +2,6 @@
   "name": "nextjs",
   "version": "0.1.0",
   "private": true,
-  
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -55,7 +54,7 @@
     "embla-carousel-react": "^8.3.0",
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
-    "framer-motion": "^12.23.22",
+    "framer-motion": "^12.23.24",
     "input-otp": "^1.2.4",
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.2",

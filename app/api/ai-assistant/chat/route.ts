@@ -1,6 +1,32 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
-import { getAssistantResponse, addUserMessage } from '@/lib/ai-assistant';
+import { getAssistantResponse, addUserMessage, getConversationHistory } from '@/lib/ai-assistant';
+
+export async function GET(request: Request) {
+  try {
+    const authHeader = request.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const limit = parseInt(url.searchParams.get('limit') || '20');
+
+    const history = await getConversationHistory(decoded.userId, limit);
+
+    return NextResponse.json({ history, success: true });
+  } catch (error) {
+    console.error('Get conversation history error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -31,11 +57,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Add user message to conversation history
-    const userMessage = addUserMessage(message);
+    // Add user message to conversation history (with userId for DB save)
+    const userMessage = addUserMessage(message, decoded.userId);
 
-    // Get AI response
-    const assistantResponse = await getAssistantResponse(message);
+    // Get AI response (this saves both messages to MongoDB)
+    const assistantResponse = await getAssistantResponse(message, decoded.userId);
 
     return NextResponse.json({
       userMessage,

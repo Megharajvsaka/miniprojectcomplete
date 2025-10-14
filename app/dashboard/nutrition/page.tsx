@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react'; 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Sidebar from '@/components/Sidebar';
@@ -68,11 +68,8 @@ function NutritionContent() {
     fat: ''
   });
 
-  useEffect(() => {
-    loadNutritionData();
-  }, [selectedDate]);
-
-  const loadNutritionData = async () => {
+  // ✅ Fixed useCallback version to avoid useEffect dependency warning
+  const loadNutritionData = useCallback(async () => {
     try {
       const token = Cookies.get('token');
       
@@ -114,7 +111,11 @@ function NutritionContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDate]);
+
+  useEffect(() => {
+    loadNutritionData();
+  }, [loadNutritionData]);
 
   const handleSetGoals = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +153,7 @@ function NutritionContent() {
     }
   };
 
+  // ✅ handleAddFood uses the fixed callback-based data reload
   const handleAddFood = async (food: {
     name: string;
     calories: number;
@@ -161,7 +163,7 @@ function NutritionContent() {
     quantity: number;
     unit: string;
     mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  }) => {
+  }): Promise<void> => {
     try {
       const token = Cookies.get('token');
       const response = await fetch('/api/nutrition/entries', {
@@ -177,13 +179,15 @@ function NutritionContent() {
       });
 
       if (response.ok) {
-        loadNutritionData(); // Reload data to get updated totals
+        await loadNutritionData(); // Reload data to get updated totals
+        setError(''); // Clear any previous errors
       } else {
         const errorData = await response.json();
         setError(errorData.error || 'Failed to add food entry');
       }
     } catch (error) {
       setError('Network error occurred');
+      throw error;
     }
   };
 
@@ -218,8 +222,8 @@ function NutritionContent() {
       user.age,
       user.weight,
       user.height,
-      'male', // Default to male, you might want to add gender to user profile
-      'moderate', // Default activity level
+      'male',
+      'moderate',
       user.fitnessGoal
     );
 
@@ -255,7 +259,6 @@ function NutritionContent() {
       
       <main className="flex-1 lg:ml-64 p-4 lg:p-8">
         <div className="max-w-6xl mx-auto">
-          {/* Header */}
           <div className="mb-8 mt-12 lg:mt-0">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -288,7 +291,6 @@ function NutritionContent() {
             </div>
           )}
 
-          {/* Nutrition Goals Setup */}
           {!nutritionGoal && (
             <div className="mb-8 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-6">
               <div className="flex items-center mb-4">
@@ -307,7 +309,6 @@ function NutritionContent() {
             </div>
           )}
 
-          {/* Goal Setting Form */}
           {showGoalForm && (
             <div className="mb-8 bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
@@ -407,17 +408,14 @@ function NutritionContent() {
 
           {nutritionGoal && (
             <>
-              {/* Nutrition Summary */}
               <div className="mb-8">
                 <NutritionSummary dailyTotals={dailyTotals} goals={nutritionGoal} />
               </div>
 
-              {/* Add Food Form */}
               <div className="mb-8">
                 <MealEntryForm onAddFood={handleAddFood} loading={loading} />
               </div>
 
-              {/* Food Entries by Meal */}
               <div className="space-y-6">
                 {mealTypeOrder.map((mealType) => {
                   const entries = groupedEntries[mealType] || [];
@@ -473,7 +471,6 @@ function NutritionContent() {
                 })}
               </div>
 
-              {/* Update Goals Button */}
               {nutritionGoal && (
                 <div className="mt-8 text-center">
                   <button

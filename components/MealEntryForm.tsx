@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Search, X } from 'lucide-react';
+import { Plus, Search, X, Check } from 'lucide-react';
 import { commonFoods } from '@/lib/nutrition';
 
 interface MealEntryFormProps {
@@ -14,7 +14,7 @@ interface MealEntryFormProps {
     quantity: number;
     unit: string;
     mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  }) => void;
+  }) => Promise<void>;
   loading?: boolean;
 }
 
@@ -22,6 +22,8 @@ export default function MealEntryForm({ onAddFood, loading = false }: MealEntryF
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFood, setSelectedFood] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     calories: '',
@@ -50,35 +52,52 @@ export default function MealEntryForm({ onAddFood, loading = false }: MealEntryF
     setSearchTerm('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.name || !formData.calories) return;
 
-    onAddFood({
-      name: formData.name,
-      calories: parseFloat(formData.calories),
-      protein: parseFloat(formData.protein) || 0,
-      carbs: parseFloat(formData.carbs) || 0,
-      fat: parseFloat(formData.fat) || 0,
-      quantity: parseFloat(formData.quantity) || 1,
-      unit: formData.unit,
-      mealType: formData.mealType,
-    });
+    setSubmitting(true);
+    setSuccessMessage('');
 
-    // Reset form
-    setFormData({
-      name: '',
-      calories: '',
-      protein: '',
-      carbs: '',
-      fat: '',
-      quantity: '1',
-      unit: 'serving',
-      mealType: 'lunch',
-    });
-    setSelectedFood(null);
-    setIsOpen(false);
+    try {
+      await onAddFood({
+        name: formData.name,
+        calories: parseFloat(formData.calories),
+        protein: parseFloat(formData.protein) || 0,
+        carbs: parseFloat(formData.carbs) || 0,
+        fat: parseFloat(formData.fat) || 0,
+        quantity: parseFloat(formData.quantity) || 1,
+        unit: formData.unit,
+        mealType: formData.mealType,
+      });
+
+      // Show success message
+      setSuccessMessage('Food added successfully!');
+      
+      // Reset form
+      setFormData({
+        name: '',
+        calories: '',
+        protein: '',
+        carbs: '',
+        fat: '',
+        quantity: '1',
+        unit: 'serving',
+        mealType: 'lunch',
+      });
+      setSelectedFood(null);
+      
+      // Auto-hide success message after 2 seconds
+      setTimeout(() => {
+        setSuccessMessage('');
+        setIsOpen(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error adding food:', error);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -102,6 +121,14 @@ export default function MealEntryForm({ onAddFood, loading = false }: MealEntryF
 
       {isOpen && (
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Success Message */}
+          {successMessage && (
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 flex items-center">
+              <Check className="h-5 w-5 mr-2" />
+              {successMessage}
+            </div>
+          )}
+
           {/* Food Search */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -125,7 +152,7 @@ export default function MealEntryForm({ onAddFood, loading = false }: MealEntryF
                     key={index}
                     type="button"
                     onClick={() => handleFoodSelect(food)}
-                    className="w-full text-left px-4 py-2 hover:bg-gray-600 text-white text-sm border-b border-gray-600 last:border-b-0"
+                    className="w-full text-left px-4 py-2 hover:bg-gray-600 text-white text-sm border-b border-gray-600 last:border-b-0 transition-colors"
                   >
                     <div className="font-medium">{food.name}</div>
                     <div className="text-xs text-gray-400">
@@ -133,6 +160,12 @@ export default function MealEntryForm({ onAddFood, loading = false }: MealEntryF
                     </div>
                   </button>
                 ))}
+              </div>
+            )}
+            
+            {searchTerm && filteredFoods.length === 0 && (
+              <div className="mt-2 p-3 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-400">
+                No foods found. Add manually below.
               </div>
             )}
           </div>
@@ -277,10 +310,10 @@ export default function MealEntryForm({ onAddFood, loading = false }: MealEntryF
 
           <button
             type="submit"
-            disabled={loading || !formData.name || !formData.calories}
+            disabled={submitting || !formData.name || !formData.calories}
             className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           >
-            {loading ? 'Adding...' : 'Add Food Entry'}
+            {submitting ? 'Adding...' : 'Add Food Entry'}
           </button>
         </form>
       )}

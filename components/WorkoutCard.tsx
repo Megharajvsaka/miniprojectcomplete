@@ -1,17 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Clock, Flame, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, Clock, Flame, Target, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { Exercise, WorkoutSession } from '@/lib/workouts';
 
 interface WorkoutCardProps {
   session: WorkoutSession;
-  onExerciseToggle: (exerciseId: string, completed: boolean) => void;
+  onExerciseToggle: (exerciseId: string, completed: boolean) => Promise<void>;
   loading?: boolean;
 }
 
 export default function WorkoutCard({ session, onExerciseToggle, loading = false }: WorkoutCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [updatingExercise, setUpdatingExercise] = useState<string | null>(null);
 
   const completionPercentage = session.exercises.length > 0 
     ? (session.completedExercises.length / session.exercises.length) * 100 
@@ -36,6 +37,15 @@ export default function WorkoutCard({ session, onExerciseToggle, loading = false
       case 'flexibility': return '🤸';
       case 'hiit': return '⚡';
       default: return '🏃';
+    }
+  };
+
+  const handleExerciseToggle = async (exerciseId: string, completed: boolean) => {
+    setUpdatingExercise(exerciseId);
+    try {
+      await onExerciseToggle(exerciseId, completed);
+    } finally {
+      setUpdatingExercise(null);
     }
   };
 
@@ -69,7 +79,7 @@ export default function WorkoutCard({ session, onExerciseToggle, loading = false
             {session.completedExercises.length}/{session.exercises.length} exercises
           </span>
         </div>
-        <div className="w-full bg-gray-700 rounded-full h-3">
+        <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
           <div 
             className={`h-3 rounded-full transition-all duration-500 ${
               completionPercentage === 100 
@@ -118,8 +128,8 @@ export default function WorkoutCard({ session, onExerciseToggle, loading = false
               key={exercise.id}
               exercise={exercise}
               completed={session.completedExercises.includes(exercise.id)}
-              onToggle={(completed) => onExerciseToggle(exercise.id, completed)}
-              loading={loading}
+              onToggle={(completed) => handleExerciseToggle(exercise.id, completed)}
+              loading={updatingExercise === exercise.id}
             />
           ))}
         </div>
@@ -131,7 +141,7 @@ export default function WorkoutCard({ session, onExerciseToggle, loading = false
 interface ExerciseItemProps {
   exercise: Exercise;
   completed: boolean;
-  onToggle: (completed: boolean) => void;
+  onToggle: (completed: boolean) => Promise<void>;
   loading: boolean;
 }
 
@@ -166,7 +176,11 @@ function ExerciseItem({ exercise, completed, onToggle, loading }: ExerciseItemPr
                   : 'border-gray-500 hover:border-green-500'
               } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
-              {completed && <Check className="h-4 w-4" />}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                completed && <Check className="h-4 w-4" />
+              )}
             </button>
             <div className="flex-1">
               <h4 className={`font-medium transition-all duration-200 ${
@@ -193,7 +207,7 @@ function ExerciseItem({ exercise, completed, onToggle, loading }: ExerciseItemPr
 
           {/* Instructions */}
           {showInstructions && (
-            <div className="mt-2 p-3 bg-gray-800/50 rounded-lg">
+            <div className="mt-2 p-3 bg-gray-800/50 rounded-lg animate-in slide-in-from-top duration-200">
               <p className="text-sm text-gray-300">{exercise.instructions}</p>
               {exercise.equipment && exercise.equipment.length > 0 && (
                 <p className="text-xs text-gray-400 mt-2">
@@ -207,13 +221,13 @@ function ExerciseItem({ exercise, completed, onToggle, loading }: ExerciseItemPr
         {/* Exercise Stats */}
         <div className="text-right text-sm text-gray-400">
           {exercise.caloriesBurned && (
-            <div className="flex items-center">
+            <div className="flex items-center justify-end">
               <Flame className="h-4 w-4 mr-1" />
               <span>{exercise.caloriesBurned} cal</span>
             </div>
           )}
           {exercise.restTime && (
-            <div className="flex items-center mt-1">
+            <div className="flex items-center justify-end mt-1">
               <Clock className="h-4 w-4 mr-1" />
               <span>{exercise.restTime}s rest</span>
             </div>

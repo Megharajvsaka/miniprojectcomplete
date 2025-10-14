@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Sidebar from '@/components/Sidebar';
@@ -15,14 +15,27 @@ const fitnessGoals = [
 function ProfileContent() {
   const { user, updateProfile } = useAuth();
   const [formData, setFormData] = useState({
-    name: user?.name || '',
-    age: user?.age?.toString() || '',
-    weight: user?.weight?.toString() || '',
-    height: user?.height?.toString() || '',
-    fitnessGoal: user?.fitnessGoal || ''
+    name: '',
+    age: '',
+    weight: '',
+    height: '',
+    fitnessGoal: ''
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Update form data when user changes
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || '',
+        age: user.age?.toString() || '',
+        weight: user.weight?.toString() || '',
+        height: user.height?.toString() || '',
+        fitnessGoal: user.fitnessGoal || ''
+      });
+    }
+  }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData(prev => ({
@@ -36,17 +49,28 @@ function ProfileContent() {
     setLoading(true);
     setMessage('');
 
-    const updates = {
+    // Build updates object with only defined values
+    const updates: any = {
       name: formData.name,
-      age: formData.age ? parseInt(formData.age) : undefined,
-      weight: formData.weight ? parseFloat(formData.weight) : undefined,
-      height: formData.height ? parseInt(formData.height) : undefined,
-      fitnessGoal: formData.fitnessGoal as 'lose_weight' | 'gain_muscle' | 'maintain_fitness' | undefined
     };
+
+    if (formData.age) {
+      updates.age = parseInt(formData.age);
+    }
+    if (formData.weight) {
+      updates.weight = parseFloat(formData.weight);
+    }
+    if (formData.height) {
+      updates.height = parseInt(formData.height);
+    }
+    if (formData.fitnessGoal) {
+      updates.fitnessGoal = formData.fitnessGoal as 'lose_weight' | 'gain_muscle' | 'maintain_fitness';
+    }
 
     const result = await updateProfile(updates);
     if (result.success) {
       setMessage('Profile updated successfully!');
+      setTimeout(() => setMessage(''), 3000);
     } else {
       setMessage(result.error || 'Failed to update profile');
     }
