@@ -1,5 +1,5 @@
 {
-  "name": "nextjs",
+  "name": "fittracker",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -59,6 +59,7 @@
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.446.0",
+    "mongodb": "^6.20.0",
     "mongoose": "^8.19.1",
     "next": "^15.5.4",
     "next-themes": "^0.3.0",

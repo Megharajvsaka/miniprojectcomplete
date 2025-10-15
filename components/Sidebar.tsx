@@ -14,9 +14,9 @@ const navigation = [
   { name: 'Workouts', href: '/dashboard/workouts', icon: Dumbbell },
   { name: 'Nutrition', href: '/dashboard/nutrition', icon: Utensils },
   { name: 'AI Assistant', href: '/dashboard/ai-assistant', icon: BrainCircuit },
-  { name: 'Hydration', href: '/dashboard/hydration', icon: Droplets },
-  { name: 'Goals', href: '/dashboard/goals', icon: Target },
-  { name: 'Progress', href: '/dashboard/progress', icon: TrendingUp },
+  //{ name: 'Hydration', href: '/dashboard/hydration', icon: Droplets },
+  //{ name: 'Goals', href: '/dashboard/goals', icon: Target },
+  //{ name: 'Progress', href: '/dashboard/progress', icon: TrendingUp },
 ];
 
 const sidebarVariants = {
