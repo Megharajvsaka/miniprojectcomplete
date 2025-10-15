@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { Plus, Search, X, Check } from 'lucide-react';
-import { commonFoods } from '@/lib/nutrition';
+// CHANGE THIS LINE - Import from constants instead of lib/nutrition
+import { commonFoods } from '@/lib/constants/foods';
 
 interface MealEntryFormProps {
   onAddFood: (food: {
