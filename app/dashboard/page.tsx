@@ -166,12 +166,15 @@ function DashboardContent() {
                 transition={{ delay: 0.5 }}
               >
                 <GamificationCard
-                  totalPoints={gamificationData.totalPoints}
-                  level={gamificationData.level}
-                  pointsToNextLevel={gamificationData.pointsToNextLevel}
-                  recentBadges={gamificationData.recentBadges}
-                  streak={streak}
-                />
+  totalPoints={gamificationData.totalPoints}
+  level={gamificationData.level}
+  currentLevelPoints={gamificationData.totalPoints % 100}  // ✅ new
+  nextLevelPoints={100}                                    // ✅ new
+  pointsToNextLevel={gamificationData.pointsToNextLevel}
+  recentBadges={gamificationData.recentBadges}
+  streak={streak}
+/>
+
               </motion.div>
               
               {/* Fitness Data Integration */}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'; 
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import FoodSuggester from '@/components/FoodSuggester';
 import Sidebar from '@/components/Sidebar';
 import NutritionSummary from '@/components/NutritionSummary';
 import MealEntryForm from '@/components/MealEntryForm';
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 import Cookies from 'js-cookie';
 import Link from 'next/link';
-import { calculateRecommendedGoals } from '@/lib/nutrition';
+import { calculateRecommendedGoals } from '@/lib/utils/nutritionUtils';
 
 interface NutritionGoal {
   calories: number;
@@ -410,6 +411,13 @@ function NutritionContent() {
             <>
               <div className="mb-8">
                 <NutritionSummary dailyTotals={dailyTotals} goals={nutritionGoal} />
+              </div>
+              <div className="mb-8">
+              <FoodSuggester 
+               dailyTotals={dailyTotals} 
+              goals={nutritionGoal}
+              onAddFood={handleAddFood}
+              />
               </div>
 
               <div className="mb-8">

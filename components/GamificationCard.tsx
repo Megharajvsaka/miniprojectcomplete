@@ -17,6 +17,7 @@ interface GamificationCardProps {
   totalPoints: number;
   level: number;
   currentLevelPoints: number;
+  pointsToNextLevel: number;
   nextLevelPoints: number;
   recentBadges: Badge[];
   streak?: number;
