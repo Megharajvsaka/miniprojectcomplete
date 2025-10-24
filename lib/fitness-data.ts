@@ -185,35 +185,48 @@ export const getFitnessGoals = async (userId: string): Promise<FitnessGoals> => 
   const db = await getDB();
   const goalsCollection = db.collection<FitnessGoals>('fitnessGoals');
   
-  let goals = await goalsCollection.findOne({ userId });
+  let goalsWithId = await goalsCollection.findOne({ userId });
   
-  if (!goals) {
-    goals = {
+  if (!goalsWithId) {
+    // Create NEW data without _id
+    const newGoalData: FitnessGoals = {
       userId,
       ...DEFAULT_GOALS
     };
-    await goalsCollection.insertOne(goals);
+    
+    // Insert it
+    await goalsCollection.insertOne(newGoalData);
+    
+    // Return without _id
+    return newGoalData;
   }
   
-  return goals;
+  // Destructure to remove _id
+  const { _id, ...goalData } = goalsWithId;
+  return goalData;
 };
+
 
 export const updateFitnessGoals = async (userId: string, newGoals: Partial<FitnessGoals>): Promise<FitnessGoals> => {
   const db = await getDB();
   const goalsCollection = db.collection<FitnessGoals>('fitnessGoals');
   
-  const existing = await goalsCollection.findOne({ userId });
+  const existingWithId = await goalsCollection.findOne({ userId });
   
-  if (existing) {
-    await goalsCollection.updateOne(
-      { userId },
-      { $set: newGoals }
-    );
+  if (existingWithId) {
+    await goalsCollection.updateOne({ userId }, { $set: newGoals });
+    
+    // Destructure to remove _id
+    const { _id, ...existing } = existingWithId;
     return { ...existing, ...newGoals };
   } else {
-    const goals = { userId, ...DEFAULT_GOALS, ...newGoals };
-    await goalsCollection.insertOne(goals);
-    return goals;
+    const newGoalData: FitnessGoals = { 
+      userId, 
+      ...DEFAULT_GOALS, 
+      ...newGoals 
+    };
+    await goalsCollection.insertOne(newGoalData);
+    return newGoalData;
   }
 };
 

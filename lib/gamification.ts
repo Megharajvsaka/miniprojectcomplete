@@ -77,9 +77,13 @@ export const initializeUserGamification = async (userId: string): Promise<Gamifi
   const profilesCollection = db.collection<GamificationProfile>('gamificationProfiles');
   
   const existingProfile = await profilesCollection.findOne({ userId });
-  if (existingProfile) return existingProfile;
+  if (existingProfile) {
+    // Destructure to remove _id
+    const { _id, ...profileData } = existingProfile;
+    return profileData;
+  }
 
-  const profile: GamificationProfile = {
+  const newProfileData: GamificationProfile = {
     userId,
     level: 1,
     totalPoints: 0,
@@ -96,21 +100,24 @@ export const initializeUserGamification = async (userId: string): Promise<Gamifi
     createdAt: new Date()
   };
 
-  await profilesCollection.insertOne(profile);
-  return profile;
+  await profilesCollection.insertOne(newProfileData);
+  return newProfileData;
 };
 
 export const getGamificationProfile = async (userId: string): Promise<GamificationProfile> => {
   const db = await getDB();
   const profilesCollection = db.collection<GamificationProfile>('gamificationProfiles');
   
-  let profile = await profilesCollection.findOne({ userId });
+  let profileWithId = await profilesCollection.findOne({ userId });
   
-  if (!profile) {
-    profile = await initializeUserGamification(userId);
+  if (!profileWithId) {
+    // Initialize and return new profile
+    return await initializeUserGamification(userId);
   }
   
-  return profile;
+  // Destructure to remove _id
+  const { _id, ...profileData } = profileWithId;
+  return profileData;
 };
 
 export const awardPoints = async (
