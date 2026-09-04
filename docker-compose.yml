@@ -1,0 +1,22 @@
+services:
+  fittracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: fittracker
+
+    ports:
+      - "3000:3000"
+
+    env_file:
+      - .env
+
+    networks:
+      - fittracker-network
+
+    restart: unless-stopped
+
+networks:
+  fittracker-network:
+    driver: bridge
